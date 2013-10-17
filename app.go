@@ -46,7 +46,7 @@ func main() {
 
 		// Move to temp and remember home
 		script_dir, _ := os.Getwd()
-		initTemp()
+		temp := initTemp()
 
 		for dx := tiles.TL.x; dx < tiles.TR.x; dx++ {
 			for dy := tiles.BL.y; dy < tiles.TL.y; dy++ {
@@ -58,6 +58,7 @@ func main() {
 		wand := Join(tiles)
 		err := os.Chdir(script_dir)
 		handle(err)
+		os.Remove(temp)
 
 		wand.WriteImage(c.Args()[2])
 
