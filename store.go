@@ -37,6 +37,20 @@ func CreateMatrix(a, b point) matrix {
 	return matrix{TL, TR, BL, BR}
 }
 
+func digestPoint(strpoint string) point {
+	splitstrpoint := strings.Split(strpoint, ",")
+	var coords []coord
+	for _, c := range splitstrpoint {
+		nc, err := strconv.ParseUint(c, 10, 64)
+		if err != nil {
+			panic("Failied to parse point coordinates")
+		}
+		coords = append(coords, coord(nc))
+	}
+
+	return point{coords[0], coords[1]}
+}
+
 func bigger(x1, x2 coord) coord {
 	if x1 > x2 {
 		return x1

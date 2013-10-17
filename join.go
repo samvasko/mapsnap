@@ -5,7 +5,7 @@ import (
 	"github.com/gographics/imagick/imagick"
 )
 
-func Join(tiles matrix) {
+func Join(tiles matrix) *imagick.MagickWand {
 	imagick.Initialize()
 	defer imagick.Terminate()
 
@@ -13,10 +13,10 @@ func Join(tiles matrix) {
 		col(tiles.BL.y, tiles.TL.y, i)
 	}
 
-	row(tiles.TL.x, tiles.TR.x)
+	return row(tiles.TL.x, tiles.TR.x)
 }
 
-func row(from, to coord) {
+func row(from, to coord) *imagick.MagickWand {
 	base := newBase()
 	defer base.Destroy()
 
@@ -25,8 +25,7 @@ func row(from, to coord) {
 	}
 
 	wand := base.MontageImage(imagick.NewDrawingWand(), "x1", "", imagick.MONTAGE_MODE_CONCATENATE, "0x0")
-	wand.WriteImage("complete.png")
-
+	return wand
 }
 
 func col(from, to, x coord) {
