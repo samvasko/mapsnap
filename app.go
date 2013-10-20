@@ -1,21 +1,17 @@
 package main
 
 import (
-	// "errors"
+	"errors"
 	"fmt"
 	"github.com/codegangsta/cli"
-	"io"
 	"io/ioutil"
-	"net/http"
 	"os"
-	"strconv"
-	"strings"
 )
 
-func handle(err error) {
-	if err != nil {
-		panic(err)
-	}
+var hosts = map[string]string{
+	"mapbox":        "",
+	"openstreetmap": "http://a.tile.openstreetmap.org//{{.Z}}/{{.X}}/{{.Y}}.png",
+	"googlemaps":    "",
 }
 
 func main() {
@@ -24,21 +20,17 @@ func main() {
 	app.Usage = "Download map tiles and join them"
 	app.Flags = []cli.Flag{
 		cli.StringFlag{"host", "mapbox", "Host for maps. Supported: mapbox,google,openstreetmap"},
-		cli.IntFlag{"z", 16, "Z coordinate/Zoom factor"},
+		cli.IntFlag{"z", 0, "Z coordinate/Zoom factor"},
 	}
 
 	app.Action = func(c *cli.Context) {
-		// Well defined rectangle
-		if len(c.Args()) < 2 {
-			bailout(c)
-		}
 
-		// Transform points into coordinates
-		// Add better error handling
-		tiles := CreateMatrix(
-			digestPoint(c.Args()[0]),
-			digestPoint(c.Args()[1]),
-		)
+		points, filename := parseArgs(c)
+		z, host := parseFlags(c)
+
+		// Transform points into coordinates and create
+		// Value matrix
+		tiles := CreateMatrix(points)
 
 		// Info time
 		fmt.Printf("Dimension x: %d, y: %d \n", tiles.width(), tiles.height())
@@ -48,86 +40,72 @@ func main() {
 		script_dir, _ := os.Getwd()
 		temp := initTemp()
 
+		// Create job channel
+		jobs := make(chan Downloadjob)
+
+		// Create workers
+		for i := 0; i < 5; i++ {
+			go Downloader(i, jobs)
+		}
+
+		// Send jobs
 		for dx := tiles.TL.x; dx < tiles.TR.x; dx++ {
 			for dy := tiles.BL.y; dy < tiles.TL.y; dy++ {
 				fmt.Printf("Getting tile: x: %d, y: %d ", dx, dy)
-				get(dx, dy)
+				jobs <- Downloadjob{point{dx, dy}, coord(z), host}
 			}
 		}
 
+		close(jobs)
+
 		wand := Join(tiles)
-		err := os.Chdir(script_dir)
-		handle(err)
+		os.Chdir(script_dir)
 		os.Remove(temp)
 
-		wand.WriteImage(c.Args()[2])
+		wand.WriteImage(filename)
 
 	}
+
 	app.Run(os.Args)
 
 }
 
-func bailout(c *cli.Context) {
-	fmt.Println("Incorrect Usage.\n")
-	cli.ShowAppHelp(c)
+func bailout(err error) {
+	fmt.Println(err)
+	os.Exit(1)
 }
 
-func digestPoint(strpoint string) point {
-	splitstrpoint := strings.Split(strpoint, ",")
-	var coords []coord
-	for _, c := range splitstrpoint {
-		nc, err := strconv.ParseUint(c, 10, 64)
-		if err != nil {
-			panic("Failied to parse point coordinates")
-		}
-		coords = append(coords, coord(nc))
+func parseArgs(c *cli.Context) ([2]string, string) {
+	// Well defined rectangle
+	if len(c.Args()) < 2 {
+		bailout(errors.New("Incorrect point definition: Define points like this '10,10 20,34'"))
+		cli.ShowAppHelp(c)
 	}
 
-	return point{coords[0], coords[1]}
-}
-
-/**
- * Control downloading
- */
-func get(x, y coord) {
-	// Sample url: http://c.tile.openstreetmap.org//16/34551/20759.png
-	// http://a.tile.openstreetmap.org//z/xxxx/yyyy.png
-
-	url := fmt.Sprintf("http://a.tile.openstreetmap.org//16/%d/%d.png", x, y)
-	filename := fmt.Sprintf("%d_%d.png", x, y)
-	fmt.Print(url)
-
-	file := fetch(url)
-	save(file, filename)
-
-	fmt.Print(" Done\n")
-}
-
-/**
- * Download and return reader
- */
-func fetch(url string) io.ReadCloser {
-	resp, err := http.Get(url)
-	if err != nil {
-		handle(err)
-	}
-	if resp.StatusCode != 200 {
-		panic(resp.Status)
+	// Output file
+	var outfile string
+	if len(c.Args()) < 3 {
+		outfile := fmt.Sprintf("%s_%s.png", c.Args()[0], c.Args()[1])
+		fmt.Printf("Output filename not specified using %s", outfile)
+	} else {
+		outfile = c.Args()[2]
 	}
 
-	return resp.Body
+	return [2]string{c.Args()[0], c.Args()[1]}, outfile
 }
 
-/**
- * Save files
- */
-func save(file io.ReadCloser, filename string) {
-	out, err := os.Create(filename)
-	handle(err)
+func parseFlags(c *cli.Context) (int, string) {
+	var z int
+	if c.Int("z") != 0 {
+		z = c.Int("z")
+	} else {
+		bailout(errors.New("Missing z"))
+		cli.ShowAppHelp(c)
+		z = 0
+	}
 
-	n, err := io.Copy(out, file)
-	handle(err)
-	_ = n
+	host := "openstreetmap"
+	return z, host
 }
 
 /**
@@ -135,9 +113,10 @@ func save(file io.ReadCloser, filename string) {
  */
 func initTemp() string {
 	temp, err := ioutil.TempDir("", "mapTiles")
-	handle(err)
-	err = os.Chdir(temp)
-	handle(err)
+	if err != nil {
+		bailout(err)
+	}
 
+	os.Chdir(temp)
 	return temp
 }

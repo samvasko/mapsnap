@@ -33,7 +33,7 @@ func col(from, to, x coord) {
 	defer base.Destroy()
 
 	for i := from; i < to; i++ {
-		addImage(base, fmt.Sprintf("%d_%d.png", x, i))
+		addImage(base, fmt.Sprintf("tile_%d:%d.png", x, i))
 	}
 
 	wand := base.MontageImage(imagick.NewDrawingWand(), "1x", "", imagick.MONTAGE_MODE_CONCATENATE, "0x0")
@@ -48,7 +48,9 @@ func col(from, to, x coord) {
 func addImage(base *imagick.MagickWand, filename string) {
 	additive := imagick.NewMagickWand()
 	err := additive.ReadImage(filename)
-	handle(err)
+	if err != nil {
+		panic(err)
+	}
 	defer additive.Destroy()
 	base.AddImage(additive)
 }
