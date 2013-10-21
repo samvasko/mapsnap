@@ -6,6 +6,7 @@ import (
 	"github.com/codegangsta/cli"
 	"io/ioutil"
 	"os"
+	"time"
 )
 
 var hosts = map[string]string{
@@ -44,18 +45,20 @@ func main() {
 		jobs := make(chan Downloadjob)
 
 		// Create workers
-		for i := 0; i < 5; i++ {
+		for i := 0; i < 20; i++ {
 			go Downloader(i, jobs)
 		}
 
 		// Send jobs
 		for dx := tiles.TL.x; dx < tiles.TR.x; dx++ {
 			for dy := tiles.BL.y; dy < tiles.TL.y; dy++ {
-				fmt.Printf("Getting tile: x: %d, y: %d ", dx, dy)
 				jobs <- Downloadjob{point{dx, dy}, coord(z), host}
 			}
 		}
 
+		time.Sleep(time.Second * 20)
+
+		fmt.Print("\n")
 		close(jobs)
 
 		wand := Join(tiles)
