@@ -42,30 +42,35 @@ func main() {
 		temp := initTemp()
 
 		// Create job channel
-		jobs := make(chan Downloadjob)
+		jobs := make(chan Downloadjob, int(tiles.size()))
+		done := make(chan bool, int(tiles.size()))
 
 		// Create workers
-		for i := 0; i < 20; i++ {
-			go Downloader(i, jobs)
+		for i := 0; i < 4; i++ {
+			go Downloader(i, jobs, done)
 		}
 
 		// Send jobs
 		for dx := tiles.TL.x; dx < tiles.TR.x; dx++ {
 			for dy := tiles.BL.y; dy < tiles.TL.y; dy++ {
-				jobs <- Downloadjob{point{dx, dy}, coord(z), host}
+				jobs <- Downloadjob{point{dx, dy}, coord(z), host, 0}
 			}
 		}
 
-		time.Sleep(time.Second * 20)
-
-		fmt.Print("\n")
 		close(jobs)
 
-		wand := Join(tiles)
-		os.Chdir(script_dir)
-		os.Remove(temp)
+		// count finished
+		start := time.Now()
 
-		wand.WriteImage(filename)
+		for i := 0; i < int(tiles.size()); i++ {
+			<-done
+			fmt.Printf("Finished: %d ~~ Speed: %.3f tiles/second \r", i, float64(i)/time.Since(start).Seconds())
+		}
+
+		img := Join(tiles)
+		os.Chdir(script_dir)
+		Save(img, filename)
+		os.Remove(temp)
 
 	}
 
@@ -88,7 +93,7 @@ func parseArgs(c *cli.Context) ([2]string, string) {
 	// Output file
 	var outfile string
 	if len(c.Args()) < 3 {
-		outfile := fmt.Sprintf("%s_%s.png", c.Args()[0], c.Args()[1])
+		outfile := fmt.Sprintf("__%s_%s.png", c.Args()[0], c.Args()[1])
 		fmt.Printf("Output filename not specified using %s", outfile)
 	} else {
 		outfile = c.Args()[2]

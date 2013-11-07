@@ -7,53 +7,41 @@ import (
 	"io"
 	"net/http"
 	"os"
+	// "runtime"
 	"text/template"
 	"time"
 )
 
 type Downloadjob struct {
-	target point
-	z      coord
-	host   string
+	target  point
+	z       coord
+	host    string
+	penalty int
 }
 
-func Downloader(id int, jobs <-chan Downloadjob) {
+var (
+	finished  uint64  = 0
+	totaltime float64 = 0
+)
+
+func Downloader(id int, jobs chan Downloadjob, done chan bool) {
 	fmt.Println("Initialized worker", id)
 	for j := range jobs {
-		url := j.toUrl()
-		var dfile io.ReadCloser
-
-		// Download with increasing time
-		for i := 0; i < 10; i++ {
-			file, err := fetch(url)
-			if err != nil {
-				if i < 8 {
-					fmt.Println(err)
-					takeNap(i)
-				} else {
-					bailout(err)
-				}
-			} else {
-				dfile = file
-				break
+		err, _ := fetch(j.toUrl(), j.toFilename())
+		if err != nil {
+			fmt.Println("Error downloading", j.target, "With: ", err)
+			if j.penalty > 20 {
+				fmt.Print("Can't take this anymore")
+				panic(err)
 			}
+
+			j.penalty++
+			takeNap(j.penalty)
 		}
 
-		for i := 0; i < 10; i++ {
-			err := save(dfile, j.toFilename())
-			if err != nil {
-				if i < 8 {
-					fmt.Println(err)
-					takeNap(i)
-				} else {
-					bailout(err)
-				}
-			} else {
-				fmt.Print(j.toFilename(), "\r")
-				break
-			}
-		}
-
+		// Yay success
+		done <- true
+		// fmt.Printf("Current average: %.4f  -- Routines: %d \r", runtime.NumGoroutine())
 	}
 }
 
@@ -78,40 +66,33 @@ func (d *Downloadjob) toFilename() string {
 /**
  * Download and return reader
  */
-func fetch(url string) (io.ReadCloser, error) {
+func fetch(url, filename string) (error, float64) {
+	start := time.Now()
 	resp, err := http.Get(url)
 	if err != nil {
-		return nil, err
+		return err, 0
 	}
+	defer resp.Body.Close()
+
 	if resp.StatusCode != 200 {
-		return nil, errors.New(resp.Status)
+		return errors.New(resp.Status), 0
 	}
-
-	return resp.Body, nil
-}
-
-/**
- * Save files
- */
-func save(file io.ReadCloser, filename string) error {
 	out, err := os.Create(filename)
 	if err != nil {
-		return err
+		return err, 0
 	}
-
 	defer out.Close()
-	_, err = io.Copy(out, file)
 
+	_, err = io.Copy(out, resp.Body)
 	if err != nil {
-		return (err)
+		return err, 0
 	}
 
-	file.Close()
-
-	return nil
+	return nil, time.Since(start).Seconds()
 }
 
 func takeNap(t int) {
-	fmt.Println("Problem ocurred, taking a nap")
-	time.Sleep(time.Second * 10 * time.Duration(t))
+	delay := time.Second * 5 * time.Duration(t)
+	fmt.Println("Problem ocurred, taking a nap for", delay, " sec")
+	time.Sleep(delay)
 }
